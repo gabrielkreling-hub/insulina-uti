@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calculadora de Infusão de Insulina (UTI)</title>
+  <meta name="description" content="App simples para auxiliar ajuste da infusão contínua de insulina em UTI conforme tabela de glicemia prévia × atual.">
+  <style>
+    :root{
+      --bg:#0b1020; --card:#141a32; --muted:#9aa4c7; --text:#e9edff;
+      --accent:#7aa2ff; --accent2:#57c17b; --warn:#ffb347; --danger:#ff6b6b;
+      --border: rgba(255,255,255,0.12); --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 18px;
+    }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: radial-gradient(1200px 800px at 20% -10%, #1b2247, #0b1020); color:var(--text); line-height:1.55; }
+    header{ padding:32px 20px 0; text-align:center; }
+    header h1{ margin:0 0 8px; font-size: clamp(22px, 2.6vw, 32px); letter-spacing:.2px; }
+    header p{ margin:0 auto; max-width:800px; color:var(--muted); font-size:14px; }
+    .wrap{ max-width:980px; margin:24px auto 60px; padding:0 16px; }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:22px; }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    @media (max-width: 760px){ .grid{ grid-template-columns: 1fr; } }
+    label{ display:block; font-weight:600; margin-bottom:6px; font-size:14px; }
+    input[type="number"], select{ width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border);
+      background:#0f1530; color:var(--text); outline:none; font-size:16px; }
+    input::placeholder{ color:#7f88ad; }
+    .row{ margin-bottom:14px; }
+    .note{ font-size:13px; color:var(--muted); margin-top:8px; }
+    .actions{ display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; }
+    button{ cursor:pointer; padding:12px 16px; border-radius:12px; border:1px solid var(--border);
+      background:linear-gradient(180deg, #4a69ff, #3555f2); color:white; font-weight:700; letter-spacing:.2px; transition: transform .06s ease; }
+    button.secondary{ background:transparent; color:var(--text); }
+    button:active{ transform: translateY(1px) }
+    .result{ margin-top:18px; padding:16px; border-radius:12px; border:1px dashed var(--border); background:#0e1430; }
+    .result .value{ font-size: clamp(22px, 3vw, 28px); font-weight:800; color:var(--accent2); }
+    .badge{ display:inline-block; padding:3px 8px; border-radius:999px; border:1px solid var(--border); font-size:12px; color:var(--muted); margin-left:6px; }
+    .warn{ color:var(--warn) } .danger{ color:var(--danger) }
+    footer{ margin:28px 0 60px; text-align:center; color:var(--muted); font-size:12px; }
+    details{ margin-top:10px; background:#0f1638; border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+    summary{ cursor:pointer; font-weight:600; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Calculadora de Infusão de Insulina (UTI)</h1>
+    <p>Insira a infusão <strong>atual</strong> (mL/h), a glicemia <strong>prévia</strong> e a <strong>atual</strong> (mg/dL).
+      O ajuste segue a tabela validada (glicemia prévia × atual). Quando a célula traz <em>% ou mL/h</em>, prevalece a <strong>maior</strong> mudança.
+      <span class="badge">1 U ≡ 1 mL</span></p>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="grid">
+        <div>
+          <div class="row">
+            <label for="rate">Infusão atual (mL/h)</label>
+            <input id="rate" type="number" step="0.1" min="0" placeholder="ex.: 2.0">
+          </div>
+          <div class="row">
+            <label for="prev">Glicemia prévia (mg/dL)</label>
+            <input id="prev" type="number" step="1" min="0" placeholder="ex.: 178">
+          </div>
+          <div class="row">
+            <label for="curr">Glicemia atual (mg/dL)</label>
+            <input id="curr" type="number" step="1" min="0" placeholder="ex.: 212">
+          </div>
+          <div class="row">
+            <label for="rounding">Arredondamento</label>
+            <select id="rounding">
+              <option value="none">Sem arredondar</option>
+              <option value="0.1">Para 0,1 mL/h</option>
+              <option value="0.5">Para 0,5 mL/h</option>
+              <option value="1">Para 1 mL/h</option>
+            </select>
+            <div class="note">Sugestão: usar 0,1 ou 0,5 mL/h conforme prática local.</div>
+          </div>
+          <div class="actions">
+            <button id="calc">Calcular nova infusão</button>
+            <button class="secondary" id="clear">Limpar</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="result" id="result" hidden>
+            <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;">
+              <div class="value" id="newRate">—</div><div>mL/h</div>
+            </div>
+            <div id="explain" class="note" style="margin-top:8px"></div>
+            <div id="hypo" class="note warn" style="margin-top:8px"></div>
+          </div>
+
+          <details>
+            <summary>Ver detalhes técnicos / regras</summary>
+            <div class="note">
+              <ul>
+                <li><strong>Prévia (P1…P8):</strong> P1 &lt;100 | P2 100–140 | P3 141–180 | P4 181–200 | P5 201–250 | P6 251–300 | P7 301–400 | P8 &gt;400</li>
+                <li><strong>Atual (A…H):</strong> A &lt;100 | B 100–140 | C 141–180 | D 181–200 | E 201–250 | F 251–300 | G 301–400 | H &gt;400</li>
+              </ul>
+            </div>
+          </details>
+
+          <div class="note" style="margin-top:12px">
+            <strong>Aviso clínico:</strong> ferramenta educativa para <em>auxiliar</em> decisões. Use julgamento clínico, protocolos locais e monitorização. Em hipoglicemia, siga o fluxo de parada, glicose 50% EV e reavaliação.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>MIT © 2025 – App estático para GitHub Pages</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function inRange(x, r){ return (r.min===undefined||x>=r.min) && (r.max===undefined||x<=r.max); }
+function roundTo(v, step){ if(!step || step==="none") return v; const s=Number(step); return Math.round(v/s)*s; }
+
+// Faixas
+const P1={max:99.999}, P2={min:100,max:140}, P3={min:141,max:180}, P4={min:181,max:200},
+      P5={min:201,max:250}, P6={min:251,max:300}, P7={min:301,max:400}, P8={min:401};
+const A={max:99.999}, B={min:100,max:140}, C={min:141,max:180}, D={min:181,max:200},
+      E={min:201,max:250}, F={min:251,max:300}, G={min:301,max:400}, H={min:401};
+
+// Tipos de mudança
+function changeLabel(c){
+  if(c.kind==="keep") return "Manter";
+  if(c.kind==="delta"){ const s=c.mlPerHour>=0?"↑":"↓"; return `${s} ${Math.abs(c.mlPerHour)} mL/h`; }
+  const s=c.percent>=0?"↑":"↓";
+  return `${s} ${Math.abs(c.percent)}% ou ${s} ${Math.abs(c.mlPerHour)} mL/h (prevalece maior)`;
+}
+
+const RULES=[
+  // B 100–140
+  {prev:P1,curr:B,change:{kind:"delta",mlPerHour:-1}},
+  {prev:P2,curr:B,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-0.5}},
+  {prev:P3,curr:B,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-0.5}},
+  {prev:P4,curr:B,change:{kind:"percent_or_ml",percent:-50,mlPerHour:-2}},
+  {prev:P5,curr:B,change:{kind:"percent_or_ml",percent:-50,mlPerHour:-2}},
+  {prev:P6,curr:B,change:{kind:"percent_or_ml",percent:-50,mlPerHour:-2}},
+  {prev:P7,curr:B,change:{kind:"percent_or_ml",percent:-75,mlPerHour:-2}},
+  {prev:P8,curr:B,change:{kind:"percent_or_ml",percent:-75,mlPerHour:-2}},
+
+  // C 141–180
+  {prev:P1,curr:C,change:{kind:"keep"}},
+  {prev:P2,curr:C,change:{kind:"keep"}},
+  {prev:P3,curr:C,change:{kind:"keep"}},
+  {prev:P4,curr:C,change:{kind:"keep"}},
+  {prev:P5,curr:C,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+  {prev:P6,curr:C,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+  {prev:P7,curr:C,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+  {prev:P8,curr:C,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+
+  // D 181–200
+  {prev:P1,curr:D,change:{kind:"delta",mlPerHour:1}},
+  {prev:P2,curr:D,change:{kind:"delta",mlPerHour:0.5}},
+  {prev:P3,curr:D,change:{kind:"delta",mlPerHour:0.5}},
+  {prev:P4,curr:D,change:{kind:"percent_or_ml",percent:25,mlPerHour:1}},
+  {prev:P5,curr:D,change:{kind:"keep"}},
+  {prev:P6,curr:D,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+  {prev:P7,curr:D,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+  {prev:P8,curr:D,change:{kind:"percent_or_ml",percent:-25,mlPerHour:-2}},
+
+  // E 201–250
+  {prev:P1,curr:E,change:{kind:"percent_or_ml",percent:25,mlPerHour:2}},
+  {prev:P2,curr:E,change:{kind:"percent_or_ml",percent:25,mlPerHour:2}},
+  {prev:P3,curr:E,change:{kind:"percent_or_ml",percent:25,mlPerHour:2}},
+  {prev:P4,curr:E,change:{kind:"percent_or_ml",percent:25,mlPerHour:1}},
+  {prev:P5,curr:E,change:{kind:"percent_or_ml",percent:25,mlPerHour:1}},
+  {prev:P6,curr:E,change:{kind:"percent_or_ml",percent:25,mlPerHour:1}},
+  {prev:P7,curr:E,change:{kind:"delta",mlPerHour:1}},
+  {prev:P8,curr:E,change:{kind:"keep"}},
+
+  // F 251–300
+  {prev:P1,curr:F,change:{kind:"percent_or_ml",percent:33,mlPerHour:2.5}},
+  {prev:P2,curr:F,change:{kind:"percent_or_ml",percent:33,mlPerHour:2.5}},
+  {prev:P3,curr:F,change:{kind:"percent_or_ml",percent:25,mlPerHour:1.5}},
+  {prev:P4,curr:F,change:{kind:"percent_or_ml",percent:25,mlPerHour:1.0}},
+  {prev:P5,curr:F,change:{kind:"delta",mlPerHour:1.0}},
+  {prev:P6,curr:F,change:{kind:"delta",mlPerHour:1.5}},
+  {prev:P7,curr:F,change:{kind:"percent_or_ml",percent:25,mlPerHour:2}},
+  {prev:P8,curr:F,change:{kind:"keep"}},
+
+  // G 301–400 (todas)
+  ...[P1,P2,P3,P4,P5,P6,P7,P8].map(p => ({prev:p,curr:G,change:{kind:"percent_or_ml",percent:40,mlPerHour:3}})),
+
+  // H >400 (todas)
+  ...[P1,P2,P3,P4,P5,P6,P7,P8].map(p => ({prev:p,curr:H,change:{kind:"percent_or_ml",percent:50,mlPerHour:4}})),
+];
+
+function findRule(prev,curr){ return RULES.find(r => inRange(prev,r.prev) && inRange(curr,r.curr)); }
+function applyChange(rate,c){
+  if(c.kind==="keep") return rate;
+  if(c.kind==="delta") return Math.max(0, rate + c.mlPerHour);
+  const byPct=rate*(1+c.percent/100), byMl=rate+c.mlPerHour;
+  const deltaPct=Math.abs(byPct-rate), deltaMl=Math.abs(c.mlPerHour);
+  return Math.max(0, deltaPct>=deltaMl ? byPct : byMl);
+}
+
+function calc(){
+  const rate=Number(($("rate").value||"0").replace(",","."));
+  const prev=Number(($("prev").value||"").replace(",","."));
+  const curr=Number(($("curr").value||"").replace(",","."));
+  const rounding=$("rounding").value;
+
+  if([rate,prev,curr].some(x=>Number.isNaN(x)||x<0)){ alert("Preencha valores válidos (não negativos)."); return; }
+
+  const resBox=$("result"), newRateEl=$("newRate"), expEl=$("explain"), hypoEl=$("hypo");
+  resBox.hidden=false; hypoEl.textContent="";
+
+  // Hipoglicemia
+  if(inRange(curr,A)){
+    const suggested = roundTo(rate*0.5, rounding);
+    newRateEl.textContent = suggested.toFixed(2);
+    expEl.innerHTML = "Fluxo de <span class='danger'>hipoglicemia</span>: parar infusão, administrar 20 mL de glicose 50% EV, reavaliar em 30 min. Quando ≥140 mg/dL, reiniciar com <strong>50%</strong> da dose anterior (valor sugerido acima).";
+    hypoEl.textContent = "Atenção: seguir protocolo institucional e monitorização intensiva.";
+    return;
+  }
+
+  const rule=findRule(prev,curr);
+  if(!rule){ newRateEl.textContent="—"; expEl.textContent="Sem regra para essa combinação."; return; }
+
+  const newRate=roundTo(applyChange(rate,rule.change), rounding);
+  newRateEl.textContent = newRate.toFixed(2);
+  expEl.textContent = "Regra aplicada: " + changeLabel(rule.change) + ".";
+}
+
+$("calc").addEventListener("click", calc);
+$("clear").addEventListener("click", ()=>{ ["rate","prev","curr"].forEach(id=>$(id).value=""); $("result").hidden=true; });
+</script>
+</body>
+</html>
